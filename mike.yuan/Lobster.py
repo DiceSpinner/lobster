@@ -9,32 +9,51 @@ green=[(0,0,0),(0,51,0),(0,102,0),(0,153,0),(0,204,0),(0,255,0)]
 white=[(0,0,0),(51,51,51),(102,102,102),(153,153,153),(204,204,204),(255,255,255)]
 black=(0,0,0)
 clock=pygame.time.Clock()
+std = 30 #game ticks per sec
+casts = [] #display message queue
+casting = 0
+count = 0
+#init
+pygame.init()
+pygame.display.set_icon(pygame.image.load("Lobster_clean.png"))
+screen=pygame.display.set_mode(size)
+pygame.display.set_caption("Lobster")
+
 #sound
+FireBall_launch=pygame.mixer.Sound("FireBall_launch.wav")
+FireBall_explode=pygame.mixer.Sound("FireBall_explode.wav")
+hurt=pygame.mixer.Sound("hurt.wav")
+openDoor=pygame.mixer.Sound("open_creaky_door.wav")
+openChest=pygame.mixer.Sound("open_chest.wav")
+die=pygame.mixer.Sound("die.wav")
+keysound=pygame.mixer.Sound("keys_drop.wav")
 
-
-
+#images
+healSign = pygame.image.load("heal.png")
+meditateSign = pygame.image.load("meditate.png")
 
 #Basic info display
 def refresh():
     for a in range (40):
         for b in range (30):
             blockMap[a][b].display()
-    
-def broadCast(text):
+
+def broadCast(text,flag = True):
     eraseCast()
+    global casting
+    casting = text
     font=pygame.font.Font(None,50)
     textImage=font.render(text, True, (255,255,255))
     if player.y<=450:
         screen.blit(textImage, [400,800])
     else:
         screen.blit(textImage, [400,100])
-    counter=0
-    player.ca=True
-
+    if flag:
+        counter=0
 def playerInfoDisplay():
     font=pygame.font.Font(None,25)
     font_2=pygame.font.Font(None,20)
-    
+
     health=font.render("Health", True, green[5])
     attackAvability=font.render("Stamina",True,(255,255,0))
     sp=font.render("SpellPower",True,(0,255,255))
@@ -45,15 +64,15 @@ def playerInfoDisplay():
     healPotion=font.render(str(player.healPotionCount),True,(255,255,0))
     bE=font_2.render("BlueElixir(2)",True,(0,255,0))
     blueElixir=font.render(str(player.blueElixirCount),True,(0,255,255))
-    
+
     pygame.draw.rect(screen,black,[1200,0,90,900])
-    
+
     screen.blit(health,[1200,0])
     pygame.draw.rect(screen,red[5],[1200,20,player.health*9,10])
 
     screen.blit(sp,[1200,40])
     pygame.draw.rect(screen,(0,0,255),[1200,60,player.spellPower,10])
-    
+
     screen.blit(attackAvability,[1200,80])
     if player.stamina<90:
         pygame.draw.rect(screen,red[4],[1200,100,player.stamina,10])
@@ -65,46 +84,51 @@ def playerInfoDisplay():
 
     screen.blit(heal,[1200,160])
     screen.blit(healPotion,[1200,180])
+    if player.hc != 0:
+        pygame.draw.rect(screen,red[4],[1230,180,(player.healCoolDown - player.hc) * 60 // player.healCoolDown,10])
+    else:
+        pygame.draw.rect(screen,green[5],[1230,180,60,10])
 
     screen.blit(bE,[1200,200])
     screen.blit(blueElixir,[1200,220])
-    
+    if player.mc != 0:
+        pygame.draw.rect(screen,red[4],[1230,220,(player.meditateCoolDown - player.mc) * 60 // player.meditateCoolDown,10])
+    else:
+        pygame.draw.rect(screen,green[5],[1230,220,60,10])
     if Creature.bossFight:
         for boss in Creature.allBoss:
             #print("displaying boss",boss.creatureType)
             if boss.health>0:
-                
-                
+
+
                 if boss.creatureType==4:
                     pygame.draw.rect(screen,(0,0,0),[245,700,1000,20])
                     pygame.draw.rect(screen,(0,255,255),[245,700,boss.health*8,20])
                 elif boss.creatureType==5:
                     pygame.draw.rect(screen,(0,0,0),[245,750,1000,20])
                     pygame.draw.rect(screen,(255,255,0),[245,750,boss.health*8,20])
-                    
-        
+
+
     if Creature.bossFightEnd:
         broadCast("Last Final Door to Unlock")
         if Block.eventCount==0:
             screen.fill((0,0,0))
             Block.eventCount+=1
-        
+
 def eraseCast():
     #print("erase")
+    if player.y <= 450:
+        for a in range(13,40):
+            for b in range(26,29):
+                blockMap[a][b].display()
+    else:
+        for a in range(13,40):
+            for b in range(0,5):
+                blockMap[a][b].display()
 
-    for a in range(13,40):
-        for b in range(26,29):
-            blockMap[a][b].display()
-    for a in range(13,40):
-        for b in range(0,5):
-            blockMap[a][b].display()
-    player.castCount=0
-    player.ca=False
-    
 #predefined map objects
 
 
-    
 class Block:
     #basic properties
     x,y=None,None
@@ -123,6 +147,7 @@ class Block:
     eventCount=0
     #static fields
     teleportable=[]
+    teleportor = []
     zombieSpawner=[]
     receiver=[]
     bossSpawner=[]
@@ -181,6 +206,7 @@ class Block:
             Block.zombieSpawner+=[self]
             self.texture=[pygame.image.load("dark.png"),pygame.image.load("Path_20.png"),pygame.image.load("Path_40.png"),pygame.image.load("Path_60.png"),pygame.image.load("Path_80.png"),pygame.image.load("Path_100.png")]
         elif self.blockType==13:#Teleport Portal
+            Block.teleportor.append(self)
             self.passible=True
             self.texture=[pygame.image.load("dark.png"),pygame.image.load("Portal_teleportor.jpg"),pygame.image.load("Portal_teleportor.jpg"),pygame.image.load("Portal_teleportor.jpg"),pygame.image.load("Portal_teleportor.jpg"),pygame.image.load("Portal_teleportor.jpg")]
         elif self.blockType==14:#Receive Portal
@@ -205,14 +231,14 @@ class Block:
         elif self.blockType==18:
             self.passible=True
             self.texture=[pygame.image.load("dark.png"),pygame.image.load("Portal_teleportor.jpg"),pygame.image.load("Portal_teleportor.jpg"),pygame.image.load("Portal_teleportor.jpg"),pygame.image.load("Portal_teleportor.jpg"),pygame.image.load("Portal_teleportor.jpg")]
-            
+
         elif self.blockType==19:
             self.passible=True
             self.texture=[pygame.image.load("dark.png"),pygame.image.load("Path_20.png"),pygame.image.load("Path_40.png"),pygame.image.load("Path_60.png"),pygame.image.load("Path_80.png"),pygame.image.load("Path_100.png")]
             Block.teleportable.append(self)
 
     #Unused method
-            
+
     def collide(self,p):#Only for obstacle blocks and special interactions
         if abs(self.x-p.x)<=15+p.collisionRadius and abs(self.y-p.y)<=15+p.collisionRadius:
             return True
@@ -236,50 +262,42 @@ class Block:
         blockList_1=self.getAdjacent()
         blockList=[blockList_1[0],blockList_1[2],blockList_1[4],blockList_1[6]]
         return blockList
-    
+
     #Test method
-    
+
     def displayInfo(self):
         print("Centre cord:",self.x,self.y)
         print("Passible=",self.passible)
-        
+
     def display(self):
         if self.lightLevel>5:
             self.lightLevel=5
         screen.blit(self.texture[self.lightLevel],[self.x-15,self.y-15])
-    
+
     #Lighting methods
-        
+
     def enlighten(self,brightness):
         if self.lightLevel<brightness:
             self.lightLevel=brightness
         self.display()
         if brightness>0 and self.passible:
-            
             for block in self.getBesides():
                 if block.lightLevel<=brightness-1 and block.passible:
                     block.enlighten(brightness-1)
                 elif block.lightLevel<=brightness-1 and not block.passible:
                     block.lightLevel=brightness-1
-                    block.display()
-                
-                
-    def darken(self,count):
-        self.lightLevel=0
+                block.display()
+
+    def refreshLight(self,brightness,refreshed):
+        #print("Y")
         self.display()
-        if count>0:
+        refreshed.append(self)
+        if brightness>=0:
             for block in self.getBesides():
-                if block.passible:
-                    block.darken(count-1)
-                elif not block.passible:
-                    block.lightLevel=0
-                    block.display()   
-        
-    
-
-
-
-    
+                if not block in refreshed and block.passible:
+                    block.refreshLight(brightness-1,refreshed)
+                if not block.passible:
+                    block.display()
 #Character class
 class Creature:
     bossFightEnd=False
@@ -315,11 +333,12 @@ class Creature:
     deathCounter=0
     displayCounter=0
     stuckCounter=0
-    #monster 
+    #monster
     aggroRange=4
     #boss
     superNova=False
     powerCounter=0
+    powerCoolDown = 10 * std
     fireCounter=0
     fireTime=0
     transformed=False
@@ -338,13 +357,9 @@ class Creature:
     stuck=False
     #FireBall
     explode=False
-    
+
     def reset(self):
         if not Creature.bossFight:
-            Block.receiver=[]
-            Block.zombieSpawner=[]
-            Block.teleportable=[]
-            Block.bossSpawner=[]
             loadMap(1)
             self.dead=False
             Creature.creatureList=[self]
@@ -363,10 +378,7 @@ class Creature:
             self.spellBookCount=0
             self.dead=False
         if Creature.bossFight:
-            Block.receiver=[]
             Block.bossSpawner=[]
-            Block.zombieSpawner=[]
-            Block.teleportable=[]
             loadMap(1)
             self.healPotionCount+=3
             self.blueElixirCount+=3
@@ -384,24 +396,21 @@ class Creature:
                 Creature.creatureList.append(boss)
                 Creature.allBoss.append(boss)
                 k+=1
-                
+
             screen.fill((0,0,0))
             Creature.allFireBall=[]
     def die(self):
         #print("removing",self.x,self.y)
+        self.displayUpdate()
         if self in Creature.creatureList:
             Creature.creatureList.remove(self)
-        
+
         if self.creatureType==1:
             Creature.zombieCount-=1
         elif self.creatureType==0:
             broadCast("You died")
             self.dead=True
-        elif self.creatureType==3:
-            if not Creature.bossFight:
-                self.getBlockInContact().darken(self.vision)
-            
-            
+
     def __init__(self,xCor,yCor,ms,collisionRad=10,direct=0,Type=0,vision=0,attackType=None):
         self.x=xCor
         self.y=yCor
@@ -416,52 +425,105 @@ class Creature:
             self.attackRange=35
             self.attackSpeed=15
             self.stamina=90
+            self.staminaMax = 90
+            self.staminaCost = [30,20]
+            self.staminaRegen = 1
+            self.spellPower = 90
+            self.spellPowerMax = 90
             self.vision=5
             self.attackType=[1,4,5]
+            self.healCounter = 0
+            self.meditateCounter = 0
+            self.healthMax = 10
+            self.healCoolDown = 10 * std
+            self.meditateCoolDown = 5 * std
+            self.healPower = 1
+            self.meditatePower = 10
+            self.hc = 0
+            self.mc = 0
         elif self.creatureType==1:
+            self.healthMax = 10
             self.texture=[pygame.image.load("Lobster_0.png"),pygame.image.load("Lobster_1.png"),pygame.image.load("Lobster_2.png"),pygame.image.load("Lobster_3.png"),pygame.image.load("Lobster_4.png"),pygame.image.load("Lobster_5.png"),pygame.image.load("Lobster_6.png"),pygame.image.load("Lobster_7.png")]
             print("Texture loadded")
             self.stamina=90
+            self.staminaMax = 90
+            self.staminaCost = [30,20]
+            self.staminaRegen = 1
             self.attackDamage=1
-            self.attackSpeed=90
+            self.attackSpeed=45
             self.attackRange=25
-            self.spellPower=10000
-            self.attackType=0
+            self.spellPower = 90
+            self.spellPowerMax = 90
+            self.attackType=[0]
             if Creature.empowered:
                 self.empowered=True
+            self.healCounter = 0
+            self.meditateCounter = 0
+            self.healCoolDown = 10 * std
+            self.meditateCoolDown = 5 * std
+            self.healPower = 1
+            self.meditatePower = 10
+            self.hc = 0
+            self.mc = 0
         elif self.creatureType==3:
             self.vision=3
             self.texture=[pygame.image.load("FireBall.png"),pygame.image.load("FireBall.png"),pygame.image.load("FireBall.png"),pygame.image.load("FireBall.png"),pygame.image.load("FireBall.png"),pygame.image.load("FireBall.png"),pygame.image.load("FireBall.png"),pygame.image.load("FireBall.png")]
 
         elif self.creatureType==4:#melee
+            self.healthMax = 100
             self.vision=5
             self.aggroRange=20
             self.texture=[pygame.image.load("Lobster_0.png"),pygame.image.load("Lobster_1.png"),pygame.image.load("Lobster_2.png"),pygame.image.load("Lobster_3.png"),pygame.image.load("Lobster_4.png"),pygame.image.load("Lobster_5.png"),pygame.image.load("Lobster_6.png"),pygame.image.load("Lobster_7.png")]
-            self.health=100
-            self.stamina=20000
-            self.spellPower=20000
+            self.health = 100
+            self.stamina=120
+            self.staminaMax = 120
+            self.staminaCost = [30,20]
+            self.staminaRegen = 1
+            self.spellPower=0
+            self.spellPowerMax = 0
             self.attackSpeed=30
             self.moveSpeed=3
             self.empowered=False
             self.attackDamage=4
             self.attackRange=25
             self.attackType=[0]
+            self.healCoolDown = 25 * std
+            self.meditateCoolDown = 5 * std
+            self.healPower = 2
+            self.meditatePower = 10
+            self.hc = 0
+            self.mc = 0
+            self.healCounter = 0
+            self.meditateCounter = 0
         elif self.creatureType==5:
+            self.healthMax = 100
             self.vision=5
             self.aggroRange=20
             self.texture=[pygame.image.load("Lobster_0.png"),pygame.image.load("Lobster_1.png"),pygame.image.load("Lobster_2.png"),pygame.image.load("Lobster_3.png"),pygame.image.load("Lobster_4.png"),pygame.image.load("Lobster_5.png"),pygame.image.load("Lobster_6.png"),pygame.image.load("Lobster_7.png")]
             self.health=100
-            self.stamina=20000
-            self.spellPower=20000
+            self.stamina=120
+            self.staminaMax = 120
+            self.staminaCost = [30,20]
+            self.staminaRegen = 1
+            self.spellPower = 200
+            self.spellPowerMax = 200
             self.attackSpeed=45
             self.moveSpeed=2
             self.attackDamage=3
             self.empowered=False
             self.attackType=[0]
-            
+            self.healCoolDown = 25 * std
+            self.meditateCoolDown = 5 * std
+            self.healPower = 1
+            self.meditatePower = 20
+            self.hc = 0
+            self.mc = 0
+            self.healCounter = 0
+            self.meditateCounter = 0
+
     def getBlockInContact(self):
         return blockMap[self.x//30][self.y//30]
-    
+
     #shared behavior.................................................................................................
     def teleport(self):
         self.tp=False
@@ -478,7 +540,7 @@ class Creature:
                 blockMap[a][b].display()
 
 
-        
+
     def move(self):
         if self.getBlockInContact().blockType==11 and self.creatureType==0:
             move=self.moveSpeed//2
@@ -509,7 +571,7 @@ class Creature:
         if self.collide():
             if self.creatureType==3:
                 self.explode=True
-                pass
+
             if 0 in self.collideType and self.x<originX:
                 self.x=originX
             if 1 in self.collideType and self.y<originY:
@@ -517,43 +579,48 @@ class Creature:
             if 2 in self.collideType and self.x>originX:
                 self.x=originX
             if 3 in self.collideType and self.y>originY:
-                self.y=originY    
+                self.y=originY
 
-        
+
     def fire(self):
-        if self.stamina>=20 and self.spellPower>=10:
+        if self.stamina>=self.staminaCost[1] and self.spellPower>=10:
             if self.creatureType==5:
                 self.attackCounter=0
-            self.stamina-=20
+            self.stamina-=self.staminaCost[1]
             self.spellPower-=10
             pygame.mixer.Sound.play(FireBall_launch)
             if not self.empowered:
-                
-                fireBall=Creature(self.x,self.y,1,7,self.direction,3)
+                fireBall=Creature(self.x,self.y,4,7,self.direction,3)
                 Creature.allFireBall+=[fireBall]
                 fireBall.attackDamage=self.attackDamage
                 fireBall.attackType=self.attackType
                 fireBall.explode=False
             else:
-                fireBall=Creature(self.x,self.y,1,7,self.direction,3)
+                #print("Fire")
+                fireBall=Creature(self.x,self.y,5,7,self.direction,3)
                 Creature.allFireBall+=[fireBall]
                 fireBall.empowered=True
                 fireBall.attackDamage=self.attackDamage+1
                 fireBall.explode=False
                 fireBall.attackType=self.attackType
-                
+        else:
+            print("Launch Failed:",self.creatureType)
+            if self.stamina < self.staminaCost[1]:
+                print(" Not Enough Stamina")
+            else:
+                print("Attack still on CoolDown:",self.attackCounter,"/",self.attackSpeed)
     def cleave(self):
-        if self.stamina>=40 and self.attackCounter==self.attackSpeed:
-            self.stamina-=30
+        if self.stamina>=self.staminaCost[0] and self.attackCounter >= self.attackSpeed:
+            self.stamina-=self.staminaCost[0]
             self.attackCounter=0
-            self.displayCounter=0
-            self.attackDisplay=True
-            pygame.display.flip()
-            #print("Attempting to attack")
+            if self.getBlockInContact().lightLevel > 0:
+                self.displayCounter=0
+                self.attackDisplay=True
+            #print("Attempting to attack",self.getBlockInContact().lightLevel)
             for creature in Creature.creatureList:
-                
+
                 if creature.creatureType in self.attackType:
-                    
+
                     if (creature.x-self.x)**2+(creature.y-self.y)**2<=(self.attackRange+creature.collisionRadius)**2:
                         creature.health-=self.attackDamage
                         pygame.mixer.Sound.play(hurt)
@@ -563,64 +630,78 @@ class Creature:
                     else:
                         #print("Target not in range")
                         pass
-            
+        else:
+            print("Attack Failed:",self.creatureType)
+            if self.stamina < self.staminaCost[0]:
+                print(" Not Enough Stamina")
+            else:
+                print("Attack still on CoolDown:",self.attackCounter,"/",self.attackSpeed)
 
 
-                        
+
     def pick(self):
         item=player.getBlockInContact().blockType
         if item==6:
             self.keyCount+=1
-            broadCast("Key + 1")
+            casts.append("Key + 1")
             pygame.mixer.Sound.play(keysound)
         elif item==7:
             self.healPotionCount+=1
-            broadCast("HealPotion + 1")
+            casts.append("HealPotion + 1")
         elif item==8:
             self.moveSpeed+=1
-            broadCast("SpeedUp")
+            casts.append("SpeedUp")
         elif  item==9:
             self.attackDamage+=1
-            broadCast("Strength increased")
+            casts.append("Strength increased")
         elif item==15:
             self.blueElixirCount+=1
-            broadCast("BlueElixir + 1")
+            casts.append("BlueElixir + 1")
         elif item==17:
             self.spellBookCount+=1
-            broadCast(str(self.spellBookCount)+" out of 2 spell books picked up")
+            casts.append(str(self.spellBookCount)+" out of 2 spell books picked up")
             if self.spellBookCount==2:
-                broadCast("FireBall strengthened")
+                casts.append("FireBall Empowered!")
                 for creature in Creature.creatureList:
                     creature.empowered=True
                 Creature.empowered=True
-                
+
         player.getBlockInContact().blockType=1
         player.getBlockInContact().texture=[pygame.image.load("dark.png"),pygame.image.load("Path_20.png"),pygame.image.load("Path_40.png"),pygame.image.load("Path_60.png"),pygame.image.load("Path_80.png"),pygame.image.load("Path_100.png")]
 
-        
+
     def open(self,c,d):
         pygame.mixer.Sound.play(openChest)
         item=random.randint(0,9)
         if item==0 or item==1 or item==2:
             self.keyCount+=1
-            broadCast("Key + 1")
+            casts.append("Key + 1")
             print("Key + 1")
         elif item==3 or item==4 or item==5:
             self.healPotionCount+=1
-            broadCast("HealPotion + 1")
+            casts.append("HealPotion + 1")
             print("Healpotion + 1")
         elif item==6 or item==7 or item==8:
             self.blueElixirCount+=1
-            broadCast("BlueElixir + 1")
+            casts.append("BlueElixir + 1")
         elif item==9:
             self.vision+=1
-            broadCast("Vision strengthened")
+            casts.append("Vision strengthened")
         if c!=None and d!=None:
             blockMap[c][d].blockType=5
             blockMap[c][d].openable=False
             blockMap[c][d].texture=[pygame.image.load("dark.png"),pygame.image.load("Chest_open_20.png"),pygame.image.load("Chest_open_40.png"),pygame.image.load("Chest_open_60.png"),pygame.image.load("Chest_open_80.png"),pygame.image.load("Chest_open_100.png")]
             blockMap[c][d].display()
-        
+
+    def heal(self):
+        if self.health < self.healthMax:
+            self.healCounter += 5
+            self.hc = self.healCoolDown
+
+    def meditate(self):
+        if self.spellPower < self.spellPowerMax:
+            self.meditateCounter += 3
+            self.mc = self.meditateCoolDown
 
     def unlock(self,c,d):
         print("unlocked door")
@@ -630,14 +711,14 @@ class Creature:
         blockMap[c][d].passible=True
         blockMap[c][d].texture=[pygame.image.load("dark.png"),pygame.image.load("Door_open_20.png"),pygame.image.load("Door_open_40.png"),pygame.image.load("Door_open_60.png"),pygame.image.load("Door_open_80.png"),pygame.image.load("Door_open_100.png")]
         self.keyCount-=1
-    
+
     def brek(self,c,d):
         blockMap[c][d].blockType=1
         blockMap[c][d].breakable=False
         blockMap[c][d].passible=True
         blockMap[c][d].texture=[pygame.image.load("dark.png"),pygame.image.load("Path_20.png"),pygame.image.load("Path_40.png"),pygame.image.load("Path_60.png"),pygame.image.load("Path_80.png"),pygame.image.load("Path_100.png")]
         blockMap[c][d].display()
-            
+
     def displayInfo(self):
         print(self.x,self.y)
         print("MoveSpeed=",self.moveSpeed)
@@ -645,25 +726,45 @@ class Creature:
         print("Direction=",self.direction)
 
     def display(self):
-        if self.direction==0 or self.direction==2 or self.direction==4 or self.direction==6:
-            screen.blit(self.texture[self.direction],[self.x-15,self.y-15])
+        if self.creatureType != 3:
+            if self.direction==0 or self.direction==2 or self.direction==4 or self.direction==6:
+                screen.blit(self.texture[self.direction],[self.x-15,self.y-15])
+            else:
+                screen.blit(self.texture[self.direction],[self.x-22,self.y-22])
         else:
-            screen.blit(self.texture[self.direction],[self.x-22,self.y-22])
+            screen.blit(self.texture[self.direction],[self.x-14,self.y-14])
         if self.creatureType==0:
             pygame.draw.circle(screen,green[5],(self.x,self.y),self.collisionRadius)
         elif self.creatureType==1:
             pygame.draw.circle(screen,(255,128,0),(self.x,self.y),self.collisionRadius)
         elif self.creatureType==4:
             pygame.draw.circle(screen,(0,255,255),(self.x,self.y),self.collisionRadius)
+            if self.transformed:
+                pygame.draw.circle(screen,(255,0,0),(self.x,self.y),self.collisionRadius-4)
         elif self.creatureType==5:
             pygame.draw.circle(screen,(255,255,0),(self.x,self.y),self.collisionRadius)
-            
+            if self.transformed:
+                pygame.draw.circle(screen,(255,0,0),(self.x,self.y),self.collisionRadius-4)
+
+        if not self.creatureType == 3:
+            if self.health > 0:
+                pygame.draw.rect(screen,(255,0,0),[self.x - 15,self.y - 15,(self.health * 30 // self.healthMax),5])
+
+            if self.spellPower > 0:
+                pygame.draw.rect(screen,(0,170,255),[self.x - 15,self.y - 10,(self.spellPower * 30 // self.spellPowerMax ),3])
+
+            if self.meditateCounter > 0:
+                screen.blit(meditateSign,[self.x + 10,self.y-10])
+
+            if self.healCounter > 0:
+                screen.blit(healSign,[self.x + 13,self.y-16])
+
     def displayUpdate(self):
         currentBlock=self.getBlockInContact()
         for a in range(-1,2):
             for b in range(-1,2):
                 blockMap[currentBlock.x//30+b][currentBlock.y//30+a].display()
-                      
+
     #collision detection
     def collide(self):
         checkList=[0,1,2,3,4,5,6,7]
@@ -675,7 +776,7 @@ class Creature:
             surroundings.append(currentBlock)
             checkList.append(8)
         overAllFlag=False
-        
+
         for direction in checkList:
             directionFlag=False
             xDifference=abs(self.x-surroundings[direction].x)
@@ -696,7 +797,7 @@ class Creature:
                                self.collideType+=[0]
                             if not 1 in self.collideType:
                                self.collideType+=[1]
-                               
+
                     elif direction==7:
                         detectX=surroundings[direction].x+15
                         detectY=surroundings[direction].y-15
@@ -707,7 +808,7 @@ class Creature:
                                self.collideType+=[0]
                             if not 3 in self.collideType:
                                self.collideType+=[3]
-                               
+
                     elif direction==3:
                         detectX=surroundings[direction].x-15
                         detectY=surroundings[direction].y+15
@@ -718,7 +819,7 @@ class Creature:
                                 self.collideType+=[2]
                             if not 1 in self.collideType:
                                 self.collideType+=[1]
-                               
+
                     elif direction==5:
                         detectX=surroundings[direction].x-15
                         detectY=surroundings[direction].y-15
@@ -748,33 +849,34 @@ class Creature:
                         elif direction==6:
                             if not 3 in self.collideType:
                                 self.collideType+=[3]
-                        
+
 
                 if directionFlag:
                     #print("colliding with direction",direction)
                     if self.creatureType==0:
                         if blockMap[surroundings[direction].x//30][surroundings[direction].y//30].openable:
-                            broadCast("Press f to open the chest.")
+                            casts.append("Press f to open the chest.")
                             self.op=True
 
                         elif blockMap[surroundings[direction].x//30][surroundings[direction].y//30].unlockable:
                             if self.keyCount>0:
-                                broadCast("Press r to unlock the door.")
+                                casts.append("Press r to unlock the door.")
                                 self.ul=True
                 if not overAllFlag:
                     self.collideType=[]
         return overAllFlag
 
-    
+
     #Zombie behavior
     def adjustPos(self):
         currentBlock=self.getBlockInContact()
-        
+
     def searchForTarget(self,target):
-        
+        if (self.creatureType==4 or self.creatureType == 1 or self.creatureType == 5) and (self.attackSpeed <= self.attackCounter and math.sqrt((self.x-target.x)**2+(self.y-target.y)**2) <= self.attackRange):
+            self.cleave()
         if abs(self.x-target.x)<self.aggroRange*30 and abs(self.y-target.y)<self.aggroRange*30:
             if self.stuck:
-                
+
                 currentBlock=self.getBlockInContact()
                 if self.x!=currentBlock.x or self.y!=currentBlock.y:
                     if self.x<currentBlock.x:
@@ -785,22 +887,23 @@ class Creature:
                         self.y+=1
                     elif self.y>currentBlock.y:
                         self.y-=1
-                            
+
                 if abs(self.x-currentBlock.x)<5 and abs(self.y-currentBlock.y)<5:
                     self.stuck=False
                     self.stuckCounter=0
-                    
+
+
             else:
                 if self.creatureType==1 or self.creatureType==4:
-                    if math.sqrt((self.x-target.x)**2+(self.y-target.y)**2)>30:
-                        previous=(self.x,self.y)
+                    if math.sqrt((self.x-target.x)**2+(self.y-target.y)**2)>15:
+                        previous=[self.x,self.y]
                         if self.x//30==target.x//30:
                             if self.y//30<target.y//30:
                                 self.direction=6
-                                
+
                             elif self.y//30>target.y//30:
                                 self.direction=2
-                                
+
                         elif self.x//30>target.x//30:
                             if self.y//30<target.y//30:
                                 self.direction=7
@@ -817,32 +920,33 @@ class Creature:
                                 self.direction=4
                         self.move()
                         if self.creatureType==1:
-                            if self.attackCounter==self.attackSpeed:
-                                self.attackCounter=0
-                                self.fire()
-                        
-                        current=(self.x,self.y)
-                        if self.creatureType==4:
-                            self.cleave()
+                            if self.health < self.healthMax and self.hc == 0:
+                                self.heal()
+                            if self.spellPower > 10:
+                                if self.attackCounter==self.attackSpeed:
+                                    self.attackCounter=0
+                                    self.fire()
+                            elif self.mc == 0:
+                                self.meditate()
+                        current=[self.x,self.y]
+
                         if previous==current:
                             self.stuckCounter+=1
                             if self.stuckCounter>=30:
                                 self.stuck=True
                         else:
                             self.stuckCounter=0
-                    else:
-                        self.cleave()
-                        
+
                 elif self.creatureType==5:
-                    if math.sqrt((self.x-target.x)**2+(self.y-target.y)**2)<=60:
-                        previous=(self.x,self.y)
+                    if math.sqrt((self.x-target.x)**2+(self.y-target.y)**2)<=60 or self.spellPower == 0:
+                        previous=[self.x,self.y]
                         if self.x//30==target.x//30:
                             if self.y//30<target.y//30:
                                 self.direction=2
-                                
+
                             elif self.y//30>target.y//30:
                                 self.direction=6
-                                
+
                         elif self.x//30>target.x//30:
                             if self.y//30<target.y//30:
                                 self.direction=3
@@ -858,9 +962,7 @@ class Creature:
                             elif self.y//30==target.y//30:
                                 self.direction=0
                         self.move()
-                        self.cleave()
-                        #print(self.stuckCounter)
-                        current=(self.x,self.y)
+                        current=[self.x,self.y]
                         if previous==current:
                             self.stuckCounter+=1
                             if self.stuckCounter>=30:
@@ -868,15 +970,15 @@ class Creature:
                         else:
                             self.stuckCounter=0
                     elif math.sqrt((self.x-target.x)**2+(self.y-target.y)**2)>70:
-                        
-                        previous=(self.x,self.y)
+
+                        previous=[self.x,self.y]
                         if self.x//30==target.x//30:
                             if self.y//30<target.y//30:
                                 self.direction=6
-                                
+
                             elif self.y//30>target.y//30:
                                 self.direction=2
-                                
+
                         elif self.x//30>target.x//30:
                             if self.y//30<target.y//30:
                                 self.direction=7
@@ -895,7 +997,7 @@ class Creature:
                         if self.attackCounter==self.attackSpeed:
                             self.fire()
                         #print(self.stuckCounter)
-                        current=(self.x,self.y)
+                        current=[self.x,self.y]
                         if previous==current:
                             self.stuckCounter+=1
                             if self.stuckCounter>=30:
@@ -904,14 +1006,14 @@ class Creature:
                             self.stuckCounter=0
 
                     else:
-                        previous=(self.x,self.y)
+                        previous=[self.x,self.y]
                         if self.x//30==target.x//30:
                             if self.y//30<target.y//30:
                                 self.direction=6
-                                
+
                             elif self.y//30>target.y//30:
                                 self.direction=2
-                                
+
                         elif self.x//30>target.x//30:
                             if self.y//30<target.y//30:
                                 self.direction=7
@@ -929,37 +1031,52 @@ class Creature:
                         if self.attackCounter==self.attackSpeed:
                             self.fire()
                         #print(self.stuckCounter)
-                        current=(self.x,self.y)
+                        current=[self.x,self.y]
                         if previous==current:
                             self.stuckCounter+=1
                             if self.stuckCounter>=30:
                                 self.stuck=True
                         else:
                             self.stuckCounter=0
-                
+
     #boss
     def standardMoves(self,target):
         self.searchForTarget(target)
         self.powerCounter+=1
 
-        
+        if self.health < self.healthMax:
+            if self.hc == 0:
+                self.heal()
+
+        if self.creatureType == 5 and self.spellPower < self.spellPowerMax:
+            if self.mc == 0:
+                self.meditate()
+
     def blink(self,target):
         for block in target.getBlockInContact().getAdjacent():
             if block in Block.teleportable:
                 self.x=block.x
                 self.y=block.y
                 refresh()
+                self.powerCounter=0
                 break
-        
-        self.powerCounter=0
-                
+
+
+
     def transform(self):
         self.moveSpeed+=1
         self.attackDamage+=1
-        self.attackSpeed=15
-        self.empowered=True
-        self.transformed=True
-    #............................
+        self.attackSpeed = 20
+        self.healPower += 1
+        self.healCoolDown += (20*std)
+        self.meditatePower += 10
+        self.meditateCoolDown += (10*std)
+        self.staminaMax += 60
+        self.staminaRegen += 1
+        self.empowered = True
+        self.transformed = True
+
+    #............................ underdeveloping functions
     def reachable(start,destination):#unused
         flag=False
         rawList=start.getAdjacent()
@@ -974,26 +1091,26 @@ class Creature:
                     if block.passible:
                         if Creature.reachable(block,destination):
                             flag=True
-            
-        
-            
+
+
+
         return flag
-    
-    def eraseMark():#unused
+
+    def eraseMark(self):#unused
         for block in blockList in blockMap:
             block.mark=False
-            
+
         #stardard AI
     def getDistance(start,destination):
         distance=0
         currentBlock=self.getBlockInContact()
         pass
-    
-    
 
-    
 
-    
+
+
+
+
 """
 The window is divided into multiple blocks,each block represents a Block object, which can be a path or an obstacle
 Each block is 30*30 pixels large
@@ -1011,19 +1128,7 @@ xPos=10 #collision radius=15
 yPos=10
 
 
-pygame.init()
-pygame.display.set_icon(pygame.image.load("Lobster_clean.png"))
-screen=pygame.display.set_mode(size)
-pygame.display.set_caption("Lobster")
 
-#sound
-FireBall_launch=pygame.mixer.Sound("FireBall_launch.wav")
-FireBall_explode=pygame.mixer.Sound("FireBall_explode.wav")
-hurt=pygame.mixer.Sound("hurt.wav")
-openDoor=pygame.mixer.Sound("open_creaky_door.wav")
-openChest=pygame.mixer.Sound("open_chest.wav")
-die=pygame.mixer.Sound("die.wav")
-keysound=pygame.mixer.Sound("keys_drop.wav")
 
 #mapSet
 def loadMap(num):
@@ -1119,12 +1224,12 @@ def loadMap(num):
                 if temp[a]=='X\n':
                         blockMap[a][b]=Block(15+a*30,15+b*30,0)
                         blockMap[a][b].display()
-    
-    
+
+
 
 
 #Map Load
-blockMap = [[0 for x in range(30)] for y in range(40)] 
+blockMap = [[0 for x in range(30)] for y in range(40)]
 loadMap(1)
 blockMap[0][0].displayInfo()
 
@@ -1133,9 +1238,13 @@ player=Creature(1155,45,2,8,1,0)
 Creature.creatureList.append(player)
 PX=0
 PY=0
-Creature.bossFight=True
-player.x=Block.receiver[0].x
-player.y=Block.receiver[0].y
+#Creature.bossFight=True
+#player.x = Block.receiver[0].x
+#player.y = Block.receiver[0].y
+player.moveSpeed += 2
+#player.attackDamage += 10
+#player.x = Block.teleportor[1].x
+#player.y = Block.teleportor[1].y
 #Enemy setup
 spawnCounter=0
 
@@ -1150,7 +1259,12 @@ instruction=False
 gameEnd=False
 init=False
 gin=False
+tick = 0
 while run:
+    clock.tick(std)
+    tick += 1
+    if tick > 30:
+        tick = 0
     if intro:
         if not init:
             pygame.mixer.music.load("Intro.mp3")
@@ -1181,7 +1295,7 @@ while run:
                     screen.fill((0,0,0))
                     pygame.display.flip()
     elif instruction:
-                
+
         font=pygame.font.Font(None,60)
         font_2=pygame.font.Font(None,30)
         text_1=font.render("Control character movements with direction keys",True,(255,255,0))
@@ -1216,9 +1330,9 @@ while run:
                     screen.fill((0,0,0))
                     pygame.display.flip()
 
-                    
     elif gameStart:
         intro=False
+        #print("GameLoop")
         if not gin:
             pygame.mixer.music.load("gameStart.mp3")
             pygame.mixer.music.play(-1)
@@ -1229,59 +1343,53 @@ while run:
             if player.deathCounter>=100:
                 player.reset()
                 player.deathCounter=0
-        clock.tick(30)
+
         #print("Firing",player.firing)
         #print("Casting=",player.casting)
-        
         for event in pygame.event.get():
             if event.type==pygame.QUIT:
                 run=False
             #key down
             if event.type==pygame.KEYDOWN:
-                
+
                 if event.key==pygame.K_LEFT:
-                    
-                    
+
+
                     pressList+=[0]
                     keysCount+=1
-                    
+
                 if event.key==pygame.K_UP:
-                    
+
                     pressList+=[2]
                     keysCount+=1
-                    
-                        
+
+
                 if event.key==pygame.K_RIGHT:
-                    
+
                     pressList+=[4]
                     keysCount+=1
-                    
+
                 if event.key==pygame.K_DOWN:
-                    
+
                     pressList+=[6]
-                    
+
                     keysCount+=1
                 #Heal
-                if player.health<10 and player.healPotionCount>0:
+                if player.health < player.healthMax and player.hc == 0 and player.healPotionCount>0:
                     if event.key==pygame.K_1:
-                        player.health+=4
-                        if player.health>10:
-                            player.health=10
                         player.healPotionCount-=1
-
-                if player.spellPower<90 and player.blueElixirCount>0:
-                    if event.key==pygame.K_2:
-                        player.spellPower+=30
+                        player.heal()
+                if player.spellPower < player.spellPowerMax and player.blueElixirCount > 0 and player.mc == 0:
+                    if event.key == pygame.K_2:
                         player.blueElixirCount-=1
-                        if player.spellPower>90:
-                            player.spellPower=90
-                #Attacking...........................................................    
+                        player.meditate()
+                #Attacking...........................................................
                 if event.key==pygame.K_d:
                     player.cleave()
                 if event.key==pygame.K_q:
                     player.fire()
-                    
-                
+
+
                 #opening and unlocking
                 if player.op:
                     if event.key==pygame.K_f:
@@ -1291,8 +1399,8 @@ while run:
                             if block.openable:
                                 player.open(block.x//30,block.y//30)
                         player.op=False
-                        
-                        
+
+
 
                 if player.ul:
                     if event.key==pygame.K_r:
@@ -1302,47 +1410,46 @@ while run:
                                 player.unlock(block.x//30,block.y//30)
                         player.ul=False
                         eraseCast()
-                        
+
                 if player.tp:
                     if player.getBlockInContact().blockType!=13:
                         player.tp=False
                     else:
                         broadCast("Enter the portal(P)")
                         if event.key==pygame.K_p:
-                            if player.getBlockInContact().blockType==13:
-                                player.teleport()
+                            player.teleport()
                             eraseCast()
             #key up
             if event.type==pygame.KEYUP:
                 if event.key==pygame.K_LEFT:
-                    
-                    
+
+
                     pressList.remove(0)
                     keysCount-=1
-                        
+
                 if event.key==pygame.K_UP:
-                    
+
                     pressList.remove(2)
-                    
+
                     keysCount-=1
-                    
-                    
+
+
                 if event.key==pygame.K_RIGHT:
-                    
-                    
+
+
                     pressList.remove(4)
                     keysCount-=1
-                    
+
                 if event.key==pygame.K_DOWN:
-                    
-                    
+
+
                     pressList.remove(6)
                     keysCount-=1
-                    
 
-        
-                            
-                
+
+
+
+
         #player direction
         if keysCount==1:
             player.direction=pressList[0]
@@ -1355,7 +1462,7 @@ while run:
                     player.direction=7
                 else:
                     player.direction=min(pressList[0],pressList[1])+1
-                    
+
         elif keysCount==3:
             if abs(pressList[0]-pressList[1])==4:
                 player.direction=pressList[2]
@@ -1363,80 +1470,93 @@ while run:
                 player.direction=pressList[1]
             elif abs(pressList[2]-pressList[1])==4:
                 player.direction=pressList[0]
-                
+
         # direction movement:
         if keysCount!=0:
             player.move()
-            
+
         """
         for a in range(30):
             for b in range(40):
                 blockMap[b][a].display()
         """
-        if player.ca:
-            player.castCount+=1
-            if player.castCount>=90:
-                eraseCast()
-                
-        
+
+        #print(zombie.health)
+        for b in range(30):
+            for a in range(40):
+                blockMap[a][b].lightLevel=0
+
+
+        player.getBlockInContact().enlighten(player.vision)
+
+        for creature in Creature.creatureList:
+            creature.displayUpdate()
+        for fireBall in Creature.allFireBall:
+            fireBall.move()
+            for creature in Creature.creatureList:
+                if creature.creatureType in fireBall.attackType:
+                    if (fireBall.x-creature.x)**2+(fireBall.y-creature.y)**2<=(fireBall.collisionRadius+creature.collisionRadius)**2:
+                        fireBall.explode=True
+            if not fireBall.explode:
+                fireBall.getBlockInContact().enlighten(fireBall.vision)
+            else:
+                fireBall.getBlockInContact().refreshLight(fireBall.vision,[])
+            fireBall.displayUpdate()
+        for creature in Creature.creatureList:
+            if creature.healCounter > 0 and tick == 0:
+                creature.healCounter -= 1
+                creature.health += creature.healPower
+                if creature.health > creature.healthMax:
+                    creature.health = creature.healthMax
+
+            if creature.meditateCounter > 0 and tick == 0:
+                creature.meditateCounter -= 1
+                creature.spellPower += creature.meditatePower
+                if creature.spellPower > creature.spellPowerMax:
+                    creature.spellPower = creature.spellPowerMax
+            if creature.mc > 0:
+                creature.mc -= 1
+            if creature.hc > 0:
+                creature.hc -= 1
+
+
+            if creature.attackDisplay:
+                if creature.displayCounter<8:
+                    creature.displayCounter+=1
+                    screen.blit(pygame.image.load("ShieldBash.png"),[creature.x-25,creature.y-25])
+                else:
+                    creature.attackDisplay=False
+        for creature in Creature.creatureList:
+            if creature.getBlockInContact().lightLevel>0:
+                creature.display()
+
         #CreatureUpdate
         if player.getBlockInContact().pickable:
             player.pick()
         if player.getBlockInContact().blockType==13:
             player.tp=True
-        
 
-        
-        
-            
-        #print(zombie.health)
-        if not Creature.bossFight:
-            for b in range(30):
-                for a in range(40):
-                    blockMap[a][b].lightLevel=0
-        
-        
-        player.getBlockInContact().enlighten(player.vision)
-        
-        for creature in Creature.creatureList:
-            if creature.getBlockInContact().lightLevel>0:
-                creature.displayUpdate()
 
-        
-        
         #fireBall
         #print(Creature.allFireBall)
         if Creature.allFireBall!=[]:
             for fireBall in Creature.allFireBall:
                 #print("FireBalls:",Creature.allFireBall)
-                
-                for creature in Creature.creatureList:
-                    if creature.creatureType in fireBall.attackType:
-                        if (fireBall.x-creature.x)**2+(fireBall.y-creature.y)**2<=(fireBall.collisionRadius+creature.collisionRadius)**2:
-                            fireBall.explode=True
-                    if not fireBall.explode:
-                        fireBall.displayUpdate()
-                        fireBall.move()
-                        #print("MoveSpeed:",fireBall.moveSpeed)
-                        fireBall.getBlockInContact().enlighten(fireBall.vision)
-                        fireBall.display()
-                        #print("FireballSpeed",bullet.moveSpeed)
-                
-                    
-                
+                if not fireBall.explode:
+                    fireBall.display()
                 if fireBall.explode:
                     #print("Explode")
                     pygame.mixer.Sound.play(FireBall_explode)
                     Creature.allFireBall.remove(fireBall)
                     #print("Explode at",bullet.x,bullet.y)
-                    fireBall.displayUpdate()
+
                     for creature in Creature.creatureList:
                         if creature.creatureType in fireBall.attackType:
                             if (creature.x-fireBall.x)**2+(creature.y-fireBall.y)**2<=(fireBall.collisionRadius+15)**2:
                                 creature.health-=fireBall.attackDamage
                                 pygame.mixer.Sound.play(hurt)
-                            
-                                
+
+
                     if fireBall.empowered:
                         brekList=[]
                         if fireBall.getBlockInContact().breakable:
@@ -1456,10 +1576,10 @@ while run:
                         elif len(brekList)==2:
                             fireBall.brek(brekList[0].x//30,brekList[0].y//30)
                             fireBall.brek(brekList[1].x//30,brekList[1].y//30)
-                    fireBall.die()
-                    del(fireBall)      
-        
-                       
+
+                    del(fireBall)
+
+
         for creature in Creature.creatureList:
             if not creature.bossFight:
                 if creature.creatureType==1:
@@ -1467,39 +1587,30 @@ while run:
                 #elif creature.creatureType!=1:
                     #if creature.getBlockInContact().lightLevel>0:
 
-                
-            if creature.attackDisplay:
-                if creature.displayCounter<8:
-                    creature.displayCounter+=1
-                    screen.blit(pygame.image.load("ShieldBash.png"),[creature.x-25,creature.y-25])
 
-                else:
-                    creature.attackDisplay=False
-            if not creature.bossFight:
-                if creature.getBlockInContact().lightLevel>0:
-                    creature.display()
-            
+
+
             #print("ZombieType:",creature.creatureType)
             if creature.health<=0:
                 pygame.mixer.Sound.play(die)
                 creature.die()
-                
+
         #stamina refill
-            if not creature.stamina==100:
-                creature.stamina+=1
-            if creature.attackCounter<creature.attackSpeed:
-                creature.attackCounter+=1
-                
-                    
+            if creature.stamina < creature.staminaMax:
+                creature.stamina += creature.staminaRegen
+            if creature.attackCounter < creature.attackSpeed:
+                creature.attackCounter += 1
+
+
         #Monster respawn
         if not Creature.bossFight:
             if Creature.zombieCount<15:
                 spawnCounter+=1
-                 
+
                 if spawnCounter>60:
                     Creature.zombieCount+=1
-                    
-                    
+
+
                     rand=random.randint(0,len(Block.zombieSpawner)-1)
                     print("Spawner pos",rand)
                     spawner=Block.zombieSpawner[rand]
@@ -1511,15 +1622,15 @@ while run:
 
 
         #bossFight
-        
+
         if Creature.bossFight:
-            
+
             if not Creature.started:
                 pygame.mixer.music.load("Combat.mp3")
                 pygame.mixer.music.play(-1)
                 player.keyCount=0
                 Creature.creatureList=[player]
-                player.vision+=5
+                #player.vision+=5
                 k=0
                 for spawner in Block.bossSpawner:
                     print("spawning boss")
@@ -1528,25 +1639,20 @@ while run:
                     Creature.allBoss.append(boss)
                     print("Adding boss",boss.creatureType)
                     k+=1
-                
+
                 screen.fill((0,0,0))
                 Creature.started=True
             if Creature.started:
                 if Creature.allBoss==[]:
-                    playerInfoDisplay()
                     Creature.bossFight=False
                     Creature.bossFightEnd=True
                     player.keyCount+=1
-                for creature in Creature.creatureList:
-                    #print("creature",creature.creatureType)
-                    creature.display()
                 for boss in Creature.allBoss:
                     if boss.health<=0:
                         Creature.allBoss.remove(boss)
-                        playerInfoDisplay()
                     if boss.superNova:
                         boss.fireCounter+=1
-                        if boss.fireCounter>=15:
+                        if boss.fireCounter>=5:
                             boss.fire()
                             boss.direction+=1
                             boss.fireTime+=1
@@ -1561,36 +1667,27 @@ while run:
                     if not boss.transformed:
                         if boss.health<50:
                             boss.transform()
-                            
-                    if boss.powerCounter>=300:
+
+                    if boss.powerCounter>=boss.powerCoolDown:
                         if boss.creatureType==5:
                             dice=random.randint(0,1)
                             if dice==1:
                                 boss.superNova=True
                             elif dice==0:
                                 boss.blink(player)
-                                
-                        elif boss.creatureType==4:
+
+                        elif boss.creatureType == 4:
                             boss.blink(player)
-                   
-                    
-            #player.getBlockInContact().enlighten(player.vision)
+            # player.getBlockInContact().enlighten(player.vision)
+
         if Creature.bossFightEnd:
-            
+
             if player.getBlockInContact().blockType==18:
                 gameEnd=True
                 gameStart=False
-            
-
-
-            
-        
-        
 
         playerInfoDisplay()
-        pygame.display.flip()
 
-        
     if gameEnd:
         pygame.mixer.music.load("end.mp3")
         pygame.mixer.music.play(-1)
@@ -1602,16 +1699,27 @@ while run:
         text_2=font.render("Exit(f)",True,(0,255,0))
         screen.blit(text,[550,400])
         screen.blit(text_2,[570,460])
-        pygame.display.flip()
+
         for event in pygame.event.get():
             if event.type==pygame.QUIT:
                 run=False
             if event.type==pygame.KEYDOWN:
                 if event.key==pygame.K_f:
                     run=False
-                
-        
-        
+
+
+
         #print(player.collideType)
-        
+    for item in casts:
+        broadCast(item)
+        casts.remove(item)
+    if casting != 0:
+        count+=1
+        if count<60:
+            broadCast(casting,False)
+        else:
+            casting = 0
+            count = 0
+            eraseCast()
+    pygame.display.flip()
 pygame.quit()
